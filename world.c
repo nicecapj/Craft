@@ -3,9 +3,8 @@
 #include "world.h"
 
 void create_world(Map *map, int p, int q) {
-    int pad = 1;
-    for (int dx = -pad; dx < CHUNK_SIZE + pad; dx++) {
-        for (int dz = -pad; dz < CHUNK_SIZE + pad; dz++) {
+    for (int dx = 0; dx < CHUNK_SIZE; dx++) {
+        for (int dz = 0; dz < CHUNK_SIZE; dz++) {
             int x = p * CHUNK_SIZE + dx;
             int z = q * CHUNK_SIZE + dz;
             float f = simplex2(x * 0.01, z * 0.01, 4, 0.5, 2);
@@ -18,14 +17,10 @@ void create_world(Map *map, int p, int q) {
                 h = t;
                 w = 2;
             }
-            if (dx < 0 || dz < 0 || dx >= CHUNK_SIZE || dz >= CHUNK_SIZE) {
-                w = -1;
-            }
             // sand and grass terrain
             for (int y = 0; y < h; y++) {
                 map_set(map, x, y, z, w);
             }
-            // TODO: w = -1 if outside of chunk
             if (w == 1) {
                 // grass
                 if (simplex2(-x * 0.1, z * 0.1, 4, 0.8, 2) > 0.6) {

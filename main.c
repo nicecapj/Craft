@@ -532,18 +532,51 @@ int player_intersects_block(
 }
 
 void exposed_faces(
-    Map *map, int x, int y, int z,
+    Chunk *chunk, Chunk *xm, Chunk *xp, Chunk *zm, Chunk *zp,
+    int x, int y, int z,
     int *f1, int *f2, int *f3, int *f4, int *f5, int *f6)
 {
-    *f1 = is_transparent(map_get(map, x - 1, y, z));
-    *f2 = is_transparent(map_get(map, x + 1, y, z));
-    *f3 = is_transparent(map_get(map, x, y + 1, z));
-    *f4 = is_transparent(map_get(map, x, y - 1, z)) && (y > 0);
-    *f5 = is_transparent(map_get(map, x, y, z - 1));
-    *f6 = is_transparent(map_get(map, x, y, z + 1));
+    // left
+    if (x == chunk->p * CHUNK_SIZE) {
+        *f1 = xm ? is_transparent(map_get(&xm->map, x - 1, y, z)) : 0;
+    }
+    else {
+        *f1 = is_transparent(map_get(&chunk->map, x - 1, y, z));
+    }
+    // right
+    if (x == chunk->p * CHUNK_SIZE + CHUNK_SIZE - 1) {
+        *f2 = xp ? is_transparent(map_get(&xp->map, x + 1, y, z)) : 0;
+    }
+    else {
+        *f2 = is_transparent(map_get(&chunk->map, x + 1, y, z));
+    }
+    // top
+    *f3 = is_transparent(map_get(&chunk->map, x, y + 1, z));
+    // bottom
+    *f4 = is_transparent(map_get(&chunk->map, x, y - 1, z)) && (y > 0);
+    // front
+    if (z == chunk->q * CHUNK_SIZE) {
+        *f5 = zm ? is_transparent(map_get(&zm->map, x, y, z - 1)) : 0;
+    }
+    else {
+        *f5 = is_transparent(map_get(&chunk->map, x, y, z - 1));
+    }
+    // back
+    if (z == chunk->q * CHUNK_SIZE + CHUNK_SIZE - 1) {
+        *f6 = zp ? is_transparent(map_get(&zp->map, x, y, z + 1)) : 0;
+    }
+    else {
+        *f6 = is_transparent(map_get(&chunk->map, x, y, z + 1));
+    }
 }
 
-void gen_chunk_buffers(Chunk *chunk) {
+void gen_chunk_buffers(Chunk *chunks, int chunk_count, Chunk *chunk) {
+    int p = chunk->p;
+    int q = chunk->q;
+    Chunk *xm = find_chunk(chunks, chunk_count, p - 1, q);
+    Chunk *xp = find_chunk(chunks, chunk_count, p + 1, q);
+    Chunk *zm = find_chunk(chunks, chunk_count, p, q - 1);
+    Chunk *zp = find_chunk(chunks, chunk_count, p, q + 1);
     Map *map = &chunk->map;
 
     int faces = 0;
@@ -552,7 +585,9 @@ void gen_chunk_buffers(Chunk *chunk) {
             continue;
         }
         int f1, f2, f3, f4, f5, f6;
-        exposed_faces(map, e->x, e->y, e->z, &f1, &f2, &f3, &f4, &f5, &f6);
+        exposed_faces(
+            chunk, xm, xp, zm, zp,
+            e->x, e->y, e->z, &f1, &f2, &f3, &f4, &f5, &f6);
         int total = f1 + f2 + f3 + f4 + f5 + f6;
         if (is_plant(e->w)) {
             total = total ? 4 : 0;
@@ -570,7 +605,9 @@ void gen_chunk_buffers(Chunk *chunk) {
             continue;
         }
         int f1, f2, f3, f4, f5, f6;
-        exposed_faces(map, e->x, e->y, e->z, &f1, &f2, &f3, &f4, &f5, &f6);
+        exposed_faces(
+            chunk, xm, xp, zm, zp,
+            e->x, e->y, e->z, &f1, &f2, &f3, &f4, &f5, &f6);
         int total = f1 + f2 + f3 + f4 + f5 + f6;
         if (is_plant(e->w)) {
             total = total ? 4 : 0;
@@ -618,8 +655,18 @@ void create_chunk(Chunk *chunk, int p, int q) {
     map_alloc(map);
     create_world(map, p, q);
     db_load_map(map, p, q);
-    gen_chunk_buffers(chunk);
     client_chunk(p, q);
+}
+
+void dirty_adjacent_chunks(Chunk *chunks, int chunk_count, int p, int q) {
+    for (int i = 0; i < chunk_count; i++) {
+        Chunk *chunk = chunks + i;
+        int dp = ABS(chunk->p - p);
+        int dq = ABS(chunk->q - q);
+        if ((dp == 0 && dq == 1) || (dp == 1 && dq == 0)) {
+            chunk->dirty = 1;
+        }
+    }
 }
 
 void ensure_chunks(
@@ -656,15 +703,17 @@ void ensure_chunks(
                 Chunk *chunk = find_chunk(chunks, count, a, b);
                 if (chunk) {
                     if (chunk->dirty) {
-                        gen_chunk_buffers(chunk);
+                        gen_chunk_buffers(chunks, count, chunk);
                         generated++;
                     }
                 }
                 else {
                     if (count < MAX_CHUNKS) {
-                        create_chunk(chunks + count, a, b);
+                        chunk = chunks + (count++);
+                        create_chunk(chunk, a, b);
+                        dirty_adjacent_chunks(chunks, count, a, b);
+                        gen_chunk_buffers(chunks, count, chunk);
                         generated++;
-                        count++;
                     }
                 }
             }
@@ -673,43 +722,23 @@ void ensure_chunks(
     *chunk_count = count;
 }
 
-void _set_block(
-    Chunk *chunks, int chunk_count,
-    int p, int q, int x, int y, int z, int w, int post)
-{
-    Chunk *chunk = find_chunk(chunks, chunk_count, p, q);
-    if (chunk) {
-        Map *map = &chunk->map;
-        map_set(map, x, y, z, w);
-        chunk->dirty = 1;
-    }
-    db_insert_block(p, q, x, y, z, w);
-    if (post) {
-        client_block(p, q, x, y, z, w);
-    }
-}
-
 void set_block(
     Chunk *chunks, int chunk_count,
     int x, int y, int z, int w, int post)
 {
     int p = chunked(x);
     int q = chunked(z);
-    _set_block(chunks, chunk_count, p, q, x, y, z, w, post);
-    w = w ? -1 : 0;
-    int p0 = x == p * CHUNK_SIZE;
-    int q0 = z == q * CHUNK_SIZE;
-    int p1 = x == p * CHUNK_SIZE + CHUNK_SIZE - 1;
-    int q1 = z == q * CHUNK_SIZE + CHUNK_SIZE - 1;
-    for (int dp = -1; dp <= 1; dp++) {
-        for (int dq = -1; dq <= 1; dq++) {
-            if (dp == 0 && dq == 0) continue;
-            if (dp < 0 && !p0) continue;
-            if (dp > 0 && !p1) continue;
-            if (dq < 0 && !q0) continue;
-            if (dq > 0 && !q1) continue;
-            _set_block(chunks, chunk_count, p + dp, q + dq, x, y, z, w, post);
-        }
+    Chunk *chunk = find_chunk(chunks, chunk_count, p, q);
+    if (chunk) {
+        Map *map = &chunk->map;
+        map_set(map, x, y, z, w);
+        chunk->dirty = 1;
+        // TODO: only dirty the necessary one (0 or 1)
+        dirty_adjacent_chunks(chunks, chunk_count, p, q);
+    }
+    db_insert_block(p, q, x, y, z, w);
+    if (post) {
+        client_block(p, q, x, y, z, w);
     }
 }
 
@@ -1157,8 +1186,7 @@ int main(int argc, char **argv) {
             {
                 Player *player = find_player(players, player_count, pid);
                 if (!player && player_count < MAX_PLAYERS) {
-                    player = players + player_count;
-                    player_count++;
+                    player = players + (player_count++);
                     player->id = pid;
                     player->position_buffer = 0;
                     player->normal_buffer = 0;
