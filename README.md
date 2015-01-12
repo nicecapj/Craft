@@ -2,7 +2,7 @@
 
 A simple Minecraft clone written in C using modern OpenGL (shaders).
 
-![](https://raw.github.com/fogleman/Craft/master/screenshot1.png)
+![Screenshot](http://i.imgur.com/SH7wcas.png)
 
 ### Features
 
@@ -71,4 +71,4 @@ You can run your own server or connect to mine. The server uses the same SQLite 
 
 ### Screenshot
 
-![](https://raw.github.com/fogleman/Craft/master/screenshot2.png)
+![Screenshot](http://i.imgur.com/foYz3aN.png)
