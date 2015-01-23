@@ -28,7 +28,7 @@ Download and install [CMake](http://www.cmake.org/cmake/resources/software.html)
 
 #### Windows
 
-It should be able to run on Windows, but I don't have a Windows machine to test on at the moment. Let me know if and how you get it to run and I will update the README.
+Check msbuild folder. You can find a visual studio solution (for VS2013) file.
 
 ### Compile and Run
 
